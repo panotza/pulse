@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -15,19 +16,22 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type watcher struct {
-	e *fsnotify.Watcher
+type fsnotifyWatcher struct {
+	e        *fsnotify.Watcher
+	excludes []*regexp.Regexp
 }
 
-func (w *watcher) Watch(ctx context.Context) <-chan string {
+func (w *fsnotifyWatcher) Watch(ctx context.Context) <-chan string {
 	c := make(chan string)
 	debouncer := newDebouncer(300 * time.Millisecond)
+
 	go func() {
 		defer func() {
 			w.e.Close()
 			close(c)
 		}()
 
+	Loop:
 		for {
 			select {
 			case <-ctx.Done():
@@ -41,7 +45,25 @@ func (w *watcher) Watch(ctx context.Context) <-chan string {
 					continue
 				}
 
-				debouncer.fire(c, event.Name)
+				name := filepath.Clean(event.Name)
+
+				for _, x := range w.excludes {
+					if x.MatchString(name) {
+						continue Loop
+					}
+				}
+
+				switch event.Op {
+				case fsnotify.Create:
+					err := w.e.Add(event.Name)
+					if err != nil {
+						log.Print("failed to watch ", event.Name)
+					}
+				case fsnotify.Remove:
+					w.e.Remove(event.Name)
+				}
+
+				debouncer.fire(c, name)
 			case err, ok := <-w.e.Errors:
 				if !ok {
 					return
@@ -54,7 +76,12 @@ func (w *watcher) Watch(ctx context.Context) <-chan string {
 	return c
 }
 
-func NewWatcher(root string, excludeDirs []string) (*watcher, error) {
+func NewFSNotifyWatcher(root string, excludes []string) (*fsnotifyWatcher, error) {
+	var reExcludes []*regexp.Regexp
+	for _, x := range excludes {
+		reExcludes = append(reExcludes, regexp.MustCompile(x))
+	}
+
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -71,7 +98,7 @@ func NewWatcher(root string, excludeDirs []string) (*watcher, error) {
 				return err
 			}
 
-			for _, x := range excludeDirs {
+			for _, x := range excludes {
 				if x == path {
 					return filepath.SkipDir
 				}
@@ -82,15 +109,17 @@ func NewWatcher(root string, excludeDirs []string) (*watcher, error) {
 		done <- err
 	}()
 
+	// sometimes windows hang when adding watching path
 	select {
 	case <-time.After(time.Second * 5):
-		return nil, fmt.Errorf("init watcher failed")
+		return nil, fmt.Errorf("init fs notify watcher failed")
 	case err := <-done:
 		if err != nil {
 			return nil, err
 		}
 	}
-	return &watcher{e: w}, nil
+
+	return &fsnotifyWatcher{e: w, excludes: reExcludes}, nil
 }
 
 type streamWatcher struct {

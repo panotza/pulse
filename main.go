@@ -43,10 +43,10 @@ func main() {
 			Usage:   "Path to build files from (defaults to same value as --path)",
 		},
 		&cli.StringSliceFlag{
-			Name:    "excludeDir",
+			Name:    "exclude",
 			Aliases: []string{"x"},
 			Value:   &cli.StringSlice{},
-			Usage:   "Relative directories to exclude",
+			Usage:   "files or directories to exclude",
 		},
 		&cli.BoolFlag{ // for backward compatible
 			Name:  "all",
@@ -129,17 +129,25 @@ func mainAction(c *cli.Context) error {
 		defer w.Close()
 
 		go func(ctx context.Context) {
+			wg.Add(1)
+
 			_ = execPipe(ctx, w, "pulse.exe", append([]string{"-w"}, os.Args[1:]...)...)
 			log.Print("host exited")
+
 			shutdown()
+			wg.Done()
 		}(ctx)
 
 		log.Print("[wsl]: start running in client mode connecting to Windows")
 		watcher = pkg.NewStreamWatcher(r)
 	} else {
-		watcher, err = pkg.NewWatcher(
+		watcher, err = pkg.NewFSNotifyWatcher(
 			c.String("path"),
-			append(c.StringSlice("excludeDir"), ".git"),
+			append(
+				c.StringSlice("exclude"),
+				"^"+strings.TrimSuffix(builder.Binary(), ".exe"),
+				".git",
+			),
 		)
 		if err != nil {
 			return fmt.Errorf("[%s]: %v", runtime.GOOS, err)
@@ -150,11 +158,6 @@ func mainAction(c *cli.Context) error {
 	executor.Do(ctx, "init")
 
 	for fc := range watcher.Watch(ctx) {
-		// skip pulse binary
-		if strings.HasPrefix(filepath.Clean(fc), builder.Binary()) {
-			continue
-		}
-
 		executor.Do(ctx, fc)
 	}
 
