@@ -27,7 +27,6 @@ pulse /path/to/your/project
 Options
 
 ```txt
-   -p                           Path to watch files from (default: ".")
    -x value                     Relative directories or files to exclude
    -go                          Reload only when .go file changes.
    -buildArgs value             Additional go build arguments
