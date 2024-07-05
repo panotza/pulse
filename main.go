@@ -2,165 +2,142 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
-	"io"
+	"io/fs"
 	"log"
 	"os"
-	"os/signal"
+	osSignal "os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
-	"syscall"
 
-	"github.com/panotza/pulse/pkg"
+	w "github.com/panotza/pulse/watcher"
+)
 
-	"github.com/urfave/cli/v2"
+type excludeFlag []string
+
+func (f *excludeFlag) String() string { return "" }
+
+func (f *excludeFlag) Set(v string) error {
+	*f = append(*f, v)
+	return nil
+}
+
+type buildArgFlag []string
+
+func (f *buildArgFlag) String() string { return "" }
+
+func (f *buildArgFlag) Set(v string) error {
+	*f = append(*f, v)
+	return nil
+}
+
+var (
+	excludes      excludeFlag
+	buildArgs     buildArgFlag
+	onlyGo        = flag.Bool("go", false, "Reload only when .go file changes.")
+	disablePreset = flag.Bool("xp", false, "Disable built-in preset.")
 )
 
 func main() {
-	app := cli.NewApp()
-	app.Name = "pulse"
-	app.Usage = "A live reload utility for Go web applications."
-	app.Action = mainAction
-	app.Flags = []cli.Flag{
-		&cli.StringFlag{
-			Name:    "bin",
-			Aliases: []string{"b"},
-			Value:   ".pulse",
-			Usage:   "name of generated binary file",
-		},
-		&cli.StringFlag{
-			Name:    "path",
-			Aliases: []string{"t"},
-			Value:   ".",
-			Usage:   "Path to watch files from",
-		},
-		&cli.StringFlag{
-			Name:    "build",
-			Aliases: []string{"d"},
-			Value:   "",
-			Usage:   "Path to build files from (defaults to same value as --path)",
-		},
-		&cli.StringSliceFlag{
-			Name:    "exclude",
-			Aliases: []string{"x"},
-			Value:   &cli.StringSlice{},
-			Usage:   "files or directories to exclude",
-		},
-		&cli.BoolFlag{ // for backward compatible
-			Name:  "all",
-			Usage: "reloads whenever any file changes, as opposed to reloading only on .go file change",
-		},
-		&cli.BoolFlag{
-			Name:    "watcher",
-			Aliases: []string{"w"},
-			Value:   false,
-			Usage:   "only watch files and send events to stdout",
-		},
-		// &cli.StringFlag{
-		// 	Name:  "buildArgs",
-		// 	Usage: "Additional go build arguments",
-		// },
+	flag.Var(&excludes, "x", "Exclude a directory or a file. can be set multiple times.")
+	flag.Var(&buildArgs, "buildArgs", "Additional go build arguments.")
+	flag.Parse()
+	args := flag.Args()
+
+	rootPath := "."
+	if len(args) > 0 {
+		rootPath = args[0]
 	}
 
-	if err := app.Run(os.Args); err != nil {
-		log.Fatal(err)
+	if !*disablePreset {
+		excludes = append(excludes,
+			".git",
+			".idea",
+			".yarn",
+			".vscode",
+			".github",
+			"node_modules",
+		)
 	}
-}
 
-func mainAction(c *cli.Context) error {
-	ctx, shutdown := context.WithCancel(context.Background())
+	ctx, shutdown := osSignal.NotifyContext(context.Background(), os.Interrupt)
 	defer shutdown()
 
-	wd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-
-	// TODO: impl
-	// buildArgs, err := shellwords.Parse(c.String("buildArgs"))
-	// if err != nil {
-	// 	return err
-	// }
-
-	watcherMode := c.Bool("watcher")
-
-	buildPath := c.String("build")
-	if buildPath == "" {
-		buildPath = c.String("path")
-	}
-
-	exit := make(chan os.Signal, 1)
-	signal.Notify(exit, os.Interrupt, os.Kill, syscall.SIGTERM)
-
-	go func() {
-		<-exit
-		shutdown()
-	}()
-
-	var wg sync.WaitGroup
-	var watcher interface {
-		Watch(ctx context.Context) <-chan string
-	}
-	var executor interface {
-		Do(ctx context.Context, file string)
-	}
-
-	isClient, err := clientMode(ctx, wd)
-	if err != nil {
-		return err
-	}
-
-	builder := pkg.NewBuilder(buildPath, c.String("bin"), wd, []string{})
-	runner := pkg.NewRunner(filepath.Join(wd, builder.Binary()))
-	runner.SetWriter(os.Stdout)
-
-	if watcherMode {
-		log.Printf("[%s]: running as watcher mode", runtime.GOOS)
-		executor = pkg.NewPrintStdoutExecutor()
-	} else {
-		executor = pkg.NewExecutor(&wg, builder, runner)
-	}
-
-	if isClient {
-		r, w := io.Pipe()
-		defer r.Close()
-		defer w.Close()
-
-		go func(ctx context.Context) {
-			wg.Add(1)
-
-			_ = execPipe(ctx, w, "pulse.exe", append([]string{"-w"}, os.Args[1:]...)...)
-			log.Print("host exited")
-
-			shutdown()
-			wg.Done()
-		}(ctx)
-
-		log.Print("[wsl]: start running in client mode connecting to Windows")
-		watcher = pkg.NewStreamWatcher(r)
-	} else {
-		watcher, err = pkg.NewFSNotifyWatcher(
-			c.String("path"),
-			append(
-				c.StringSlice("exclude"),
-				"^"+strings.TrimSuffix(builder.Binary(), ".exe"),
-				".git",
-			),
-		)
+	{
+		fi, err := os.Stat(rootPath)
 		if err != nil {
-			return fmt.Errorf("[%s]: %v", runtime.GOOS, err)
+			log.Fatal("stat watch path:", err)
+		}
+
+		if !fi.IsDir() {
+			log.Fatal("watch path should be a directory")
 		}
 	}
 
-	// build on start
-	executor.Do(ctx, "init")
+	watcher := w.NewFSNotify(rootPath, excludes, *onlyGo)
+	signal := watcher.Watch(ctx)
 
-	for fc := range watcher.Watch(ctx) {
-		executor.Do(ctx, fc)
+	var execName string
+	if filepath.IsAbs(rootPath) {
+		execName = filepath.Base(rootPath)
+	} else {
+		wd, err := os.Getwd()
+		if err != nil {
+			log.Fatal(err)
+		}
+		execName = filepath.Base(wd)
+	}
+	if runtime.GOOS == "windows" && !strings.HasSuffix(execName, ".exe") {
+		execName += ".exe"
+	}
+	outBinPath := filepath.Join(os.TempDir(), "pulse_"+execName)
+	fmt.Println("Pulse bin:", outBinPath)
+	defer func() {
+		os.Remove(outBinPath)
+	}()
+
+	builder := NewBuilder(rootPath, outBinPath, buildArgs)
+	runner := NewRunner(rootPath, outBinPath, builder.BuildSignal(), args)
+	go runner.Listen(ctx)
+
+	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+		if d.IsDir() {
+			for _, ex := range excludes {
+				if strings.HasSuffix(path, ex) {
+					return filepath.SkipDir
+				}
+			}
+			if err := watcher.Add(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		shutdown()
+		log.Fatal(err)
 	}
 
-	wg.Wait()
-	return nil
+	runCtx, cancel := context.WithCancel(ctx)
+	for {
+		// this thread handle watch signal. should not contain any blocking code
+		select {
+		case <-ctx.Done():
+			cancel()
+			return
+		case _, ok := <-signal:
+			if !ok {
+				if err := watcher.Error(); err != nil {
+					log.Println("[Pulse] watcher error:", err)
+				}
+				return
+			}
+
+			cancel()
+			runCtx, cancel = context.WithCancel(ctx)
+			go builder.Build(runCtx)
+		}
+	}
 }
