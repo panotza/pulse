@@ -10,6 +10,7 @@ import (
 	osSignal "os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	w "github.com/panotza/pulse/watcher"
@@ -99,7 +100,12 @@ func main() {
 	}()
 
 	builder := NewBuilder(rootPath, outBinPath, buildArgs)
-	runner := NewRunner(rootPath, outBinPath, builder.BuildSignal(), args)
+
+	var runArgs []string
+	if i := slices.Index(args, "--"); i >= 0 {
+		runArgs = args[i+1:]
+	}
+	runner := NewRunner(rootPath, outBinPath, builder.BuildSignal(), runArgs)
 	go runner.Listen(ctx)
 
 	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
