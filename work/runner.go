@@ -1,11 +1,10 @@
-package main
+package work
 
 import (
 	"context"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -15,22 +14,15 @@ import (
 type Runner struct {
 	binPath  string
 	rootPath string
-	dir      string
 	args     []string
 
 	refreshSig <-chan struct{}
 }
 
 func NewRunner(rootPath string, binPath string, refreshSig <-chan struct{}, args []string) *Runner {
-	var dir string
-	if filepath.IsAbs(rootPath) {
-		dir = rootPath
-	}
-
 	return &Runner{
 		binPath:    binPath,
 		rootPath:   rootPath,
-		dir:        dir,
 		refreshSig: refreshSig,
 		args:       args,
 	}
@@ -76,9 +68,10 @@ func (r *Runner) Listen(ctx context.Context) {
 
 func (r *Runner) exec() (func(), error) {
 	cmd := exec.Command(r.binPath, r.args...)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Dir = r.dir
+	cmd.Dir = r.rootPath
 	err := cmd.Start()
 	if err != nil {
 		return nil, err

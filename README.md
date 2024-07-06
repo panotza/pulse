@@ -27,10 +27,11 @@ pulse /path/to/your/project
 Options
 
 ```txt
-   -x value                     Relative directories or files to exclude
+   -x value                     Relative directories or files to exclude.
    -go                          Reload only when .go file changes.
-   -buildArgs value             Additional go build arguments
-   -h                           show help
+   -xp                          Disable built-in preset.
+   -buildArgs value             Additional go build arguments.
+   -h                           show help.
 ```
 
 ## Pass arguments to your program

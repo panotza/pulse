@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -14,6 +16,7 @@ import (
 	"strings"
 
 	w "github.com/panotza/pulse/watcher"
+	"github.com/panotza/pulse/work"
 )
 
 type excludeFlag []string
@@ -80,32 +83,17 @@ func main() {
 	watcher := w.NewFSNotify(rootPath, excludes, *onlyGo)
 	signal := watcher.Watch(ctx)
 
-	var execName string
-	if filepath.IsAbs(rootPath) {
-		execName = filepath.Base(rootPath)
-	} else {
-		wd, err := os.Getwd()
-		if err != nil {
-			log.Fatal(err)
-		}
-		execName = filepath.Base(wd)
-	}
-	if runtime.GOOS == "windows" && !strings.HasSuffix(execName, ".exe") {
-		execName += ".exe"
-	}
-	outBinPath := filepath.Join(os.TempDir(), "pulse_"+execName)
+	outBinPath := getOutBinPath(rootPath)
+	defer os.Remove(outBinPath)
 	fmt.Println("Pulse bin:", outBinPath)
-	defer func() {
-		os.Remove(outBinPath)
-	}()
 
-	builder := NewBuilder(rootPath, outBinPath, buildArgs)
+	builder := work.NewBuilder(rootPath, outBinPath, buildArgs)
 
 	var runArgs []string
 	if i := slices.Index(args, "--"); i >= 0 {
 		runArgs = args[i+1:]
 	}
-	runner := NewRunner(rootPath, outBinPath, builder.BuildSignal(), runArgs)
+	runner := work.NewRunner(rootPath, outBinPath, builder.BuildSignal(), runArgs)
 	go runner.Listen(ctx)
 
 	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
@@ -146,4 +134,29 @@ func main() {
 			go builder.Build(runCtx)
 		}
 	}
+}
+
+func getOutBinPath(rootPath string) string {
+	if !filepath.IsAbs(rootPath) {
+		wd, err := os.Getwd()
+		if err != nil {
+			log.Fatal(err)
+		}
+		rootPath = filepath.Join(wd, rootPath)
+	}
+	fmt.Println(rootPath)
+	name := filepath.Base(rootPath)
+
+	hash := md5.Sum([]byte(rootPath))
+	name += hex.EncodeToString(hash[:])[:4]
+	if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") {
+		name += ".exe"
+	}
+
+	dir := filepath.Join(os.TempDir(), "pulse")
+	err := os.MkdirAll(dir, 0750)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return filepath.Join(dir, name)
 }

@@ -1,17 +1,15 @@
-package main
+package work
 
 import (
 	"context"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 )
 
 type Builder struct {
 	rootPath   string
-	dir        string
 	outBinPath string
 	buildArgs  []string
 
@@ -19,13 +17,8 @@ type Builder struct {
 }
 
 func NewBuilder(rootPath, outBinPath string, buildArgs []string) *Builder {
-	var dir string
-	if filepath.IsAbs(rootPath) {
-		dir = rootPath
-	}
 	return &Builder{
 		rootPath:    rootPath,
-		dir:         dir,
 		outBinPath:  outBinPath,
 		buildArgs:   buildArgs,
 		buildSignal: make(chan struct{}),
@@ -41,9 +34,10 @@ func (b *Builder) Build(ctx context.Context) (err error) {
 	args = append(args, ".")
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Dir = b.dir
+	cmd.Dir = b.rootPath
 
 	log.Println("[Pulse] Building...")
 	start := time.Now()
