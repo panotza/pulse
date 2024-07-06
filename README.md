@@ -41,3 +41,16 @@ You can use `--` to pass arguments to your program
 ```shell
 pulse . -- -v abc foo bar
 ```
+
+## Built-in exclude preset list
+
+this is built-in exclude list enable by default (you can disable using `-xp` flag)
+
+```
+.git
+.idea
+.yarn
+.vscode
+.github
+node_modules
+```
