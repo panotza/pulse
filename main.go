@@ -144,7 +144,6 @@ func getOutBinPath(rootPath string) string {
 		}
 		rootPath = filepath.Join(wd, rootPath)
 	}
-	fmt.Println(rootPath)
 	name := filepath.Base(rootPath)
 
 	hash := md5.Sum([]byte(rootPath))
