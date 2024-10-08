@@ -42,6 +42,8 @@ var (
 	buildArgs     buildArgFlag
 	onlyGo        = flag.Bool("go", false, "Reload only when .go file changes.")
 	disablePreset = flag.Bool("xp", false, "Disable built-in preset.")
+	watchDir      = flag.String("wd", ".", "Watching directory.")
+	workingDir    = flag.String("cwd", ".", "Working directory of the executable.")
 )
 
 func main() {
@@ -50,9 +52,16 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	rootPath := "."
+	var err error
+
+	packagePath := "."
 	if len(args) > 0 {
-		rootPath = args[0]
+		packagePath = args[0]
+	}
+
+	packagePath, err = filepath.Abs(packagePath)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	if !*disablePreset {
@@ -70,7 +79,7 @@ func main() {
 	defer shutdown()
 
 	{
-		fi, err := os.Stat(rootPath)
+		fi, err := os.Stat(*watchDir)
 		if err != nil {
 			log.Fatal("stat watch path:", err)
 		}
@@ -80,23 +89,23 @@ func main() {
 		}
 	}
 
-	watcher := w.NewFSNotify(rootPath, excludes, *onlyGo)
+	watcher := w.NewFSNotify(*watchDir, excludes, *onlyGo)
 	signal := watcher.Watch(ctx)
 
-	outBinPath := getOutBinPath(rootPath)
+	outBinPath := getOutBinPath(packagePath)
 	defer os.Remove(outBinPath)
 	fmt.Println("Pulse bin:", outBinPath)
 
-	builder := work.NewBuilder(rootPath, outBinPath, buildArgs)
+	builder := work.NewBuilder(packagePath, outBinPath, buildArgs)
 
 	var runArgs []string
 	if i := slices.Index(args, "--"); i >= 0 {
 		runArgs = args[i+1:]
 	}
-	runner := work.NewRunner(rootPath, outBinPath, builder.BuildSignal(), runArgs)
+	runner := work.NewRunner(*workingDir, outBinPath, builder.BuildSignal(), runArgs)
 	go runner.Listen(ctx)
 
-	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(*watchDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -139,17 +148,9 @@ func main() {
 	}
 }
 
-func getOutBinPath(rootPath string) string {
-	if !filepath.IsAbs(rootPath) {
-		wd, err := os.Getwd()
-		if err != nil {
-			log.Fatal(err)
-		}
-		rootPath = filepath.Join(wd, rootPath)
-	}
-	name := filepath.Base(rootPath)
-
-	hash := md5.Sum([]byte(rootPath))
+func getOutBinPath(packagePath string) string {
+	hash := md5.Sum([]byte(packagePath))
+	name := filepath.Base(packagePath)
 	name += hex.EncodeToString(hash[:])[:4]
 	if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") {
 		name += ".exe"

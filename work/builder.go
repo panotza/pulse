@@ -9,16 +9,16 @@ import (
 )
 
 type Builder struct {
-	rootPath   string
-	outBinPath string
-	buildArgs  []string
+	packagePath string
+	outBinPath  string
+	buildArgs   []string
 
 	buildSignal chan struct{}
 }
 
-func NewBuilder(rootPath, outBinPath string, buildArgs []string) *Builder {
+func NewBuilder(packagePath, outBinPath string, buildArgs []string) *Builder {
 	return &Builder{
-		rootPath:    rootPath,
+		packagePath: packagePath,
 		outBinPath:  outBinPath,
 		buildArgs:   buildArgs,
 		buildSignal: make(chan struct{}),
@@ -31,13 +31,12 @@ func (b *Builder) BuildSignal() <-chan struct{} {
 
 func (b *Builder) Build(ctx context.Context) (err error) {
 	args := append([]string{"go", "build", "-o", b.outBinPath}, b.buildArgs...)
-	args = append(args, ".")
+	args = append(args, b.packagePath)
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Dir = b.rootPath
 
 	log.Println("[Pulse] Building...")
 	start := time.Now()
