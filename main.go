@@ -97,6 +97,9 @@ func main() {
 	go runner.Listen(ctx)
 
 	err := filepath.WalkDir(rootPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		if d.IsDir() {
 			for _, ex := range excludes {
 				if strings.HasSuffix(path, ex) {

@@ -28,10 +28,10 @@ Options
 
 ```txt
    -x value                     Relative directories or files to exclude.
-   -go                          Reload only when .go file changes.
-   -xp                          Disable built-in preset.
-   -buildArgs value             Additional go build arguments.
-   -h                           show help.
+   -go                          Reload only when .go files change.
+   -xp                          Disable the built-in preset.
+   -buildArgs value             Additional Go build arguments.
+   -h                           Show help.
 ```
 
 ## Pass arguments to your program
@@ -44,7 +44,7 @@ pulse . -- -v abc foo bar
 
 ## Built-in exclude preset list
 
-this is built-in exclude list enable by default (you can disable using `-xp` flag)
+this is a built-in exclude list enabled by default (you can disable it using the `-xp` flag)
 
 ```
 .git
