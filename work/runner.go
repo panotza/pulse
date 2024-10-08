@@ -12,17 +12,17 @@ import (
 )
 
 type Runner struct {
-	binPath  string
-	rootPath string
-	args     []string
+	binPath    string
+	workingDir string
+	args       []string
 
 	refreshSig <-chan struct{}
 }
 
-func NewRunner(rootPath string, binPath string, refreshSig <-chan struct{}, args []string) *Runner {
+func NewRunner(workingDir string, binPath string, refreshSig <-chan struct{}, args []string) *Runner {
 	return &Runner{
 		binPath:    binPath,
-		rootPath:   rootPath,
+		workingDir: workingDir,
 		refreshSig: refreshSig,
 		args:       args,
 	}
@@ -71,7 +71,7 @@ func (r *Runner) exec() (func(), error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Dir = r.rootPath
+	cmd.Dir = r.workingDir
 	err := cmd.Start()
 	if err != nil {
 		return nil, err

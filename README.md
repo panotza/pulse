@@ -20,13 +20,16 @@ pulse
 or
 
 ```shell
-pulse . # refer to current directory
-pulse /path/to/your/project
+pulse . # watch current directory and also go run current directory package
+pulse /path/to/your/package (directory or go file) # watch current directory and go run /path/to/your/package
+pulse -wd ./sub/folder . # watch only specific folder
 ```
 
 Options
 
 ```txt
+   -wd                          Watching Directory.
+   -cwd                         Working directory of the executable.
    -x value                     Relative directories or files to exclude.
    -go                          Reload only when .go files change.
    -xp                          Disable the built-in preset.
