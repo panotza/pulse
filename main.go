@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/panotza/pulse/watcher"
 	w "github.com/panotza/pulse/watcher"
 	"github.com/panotza/pulse/work"
 )
@@ -24,6 +25,15 @@ type excludeFlag []string
 func (f *excludeFlag) String() string { return "" }
 
 func (f *excludeFlag) Set(v string) error {
+	*f = append(*f, v)
+	return nil
+}
+
+type watchDirFlag []string
+
+func (f *watchDirFlag) String() string { return "" }
+
+func (f *watchDirFlag) Set(v string) error {
 	*f = append(*f, v)
 	return nil
 }
@@ -40,15 +50,16 @@ func (f *buildArgFlag) Set(v string) error {
 var (
 	excludes      excludeFlag
 	buildArgs     buildArgFlag
+	watchDirs     watchDirFlag
 	onlyGo        = flag.Bool("go", false, "Reload only when .go file changes.")
 	disablePreset = flag.Bool("xp", false, "Disable built-in preset.")
-	watchDir      = flag.String("wd", ".", "Watching directory.")
 	workingDir    = flag.String("cwd", ".", "Working directory of the executable.")
 )
 
 func main() {
 	flag.Var(&excludes, "x", "Exclude a directory or a file. can be set multiple times.")
 	flag.Var(&buildArgs, "buildArgs", "Additional go build arguments.")
+	flag.Var(&watchDirs, "wd", "Watching directory.")
 	flag.Parse()
 	args := flag.Args()
 
@@ -78,18 +89,7 @@ func main() {
 	ctx, shutdown := osSignal.NotifyContext(context.Background(), os.Interrupt)
 	defer shutdown()
 
-	{
-		fi, err := os.Stat(*watchDir)
-		if err != nil {
-			log.Fatal("stat watch path:", err)
-		}
-
-		if !fi.IsDir() {
-			log.Fatal("watch path should be a directory")
-		}
-	}
-
-	watcher := w.NewFSNotify(*watchDir, excludes, *onlyGo)
+	watcher := w.NewFSNotify(excludes, *onlyGo)
 	signal := watcher.Watch(ctx)
 
 	outBinPath := getOutBinPath(packagePath)
@@ -105,25 +105,23 @@ func main() {
 	runner := work.NewRunner(*workingDir, outBinPath, builder.BuildSignal(), runArgs)
 	go runner.Listen(ctx)
 
-	err = filepath.WalkDir(*watchDir, func(path string, d fs.DirEntry, err error) error {
+	if len(watchDirs) == 0 {
+		watchDirs = append(watchDirs, ".")
+	}
+	for _, dir := range watchDirs {
+		fi, err := os.Stat(dir)
 		if err != nil {
-			return err
+			log.Fatal("stat watch path:", err)
 		}
-		if d.IsDir() {
-			for _, ex := range excludes {
-				if strings.HasSuffix(path, ex) {
-					return filepath.SkipDir
-				}
-			}
-			if err := watcher.Add(path); err != nil {
-				return err
-			}
+		if !fi.IsDir() {
+			log.Fatal("watch path should be a directory")
 		}
-		return nil
-	})
-	if err != nil {
-		shutdown()
-		log.Fatal(err)
+
+		err = addWatchDir(watcher, dir, excludes)
+		if err != nil {
+			shutdown()
+			log.Fatal(err)
+		}
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -162,4 +160,23 @@ func getOutBinPath(packagePath string) string {
 		log.Fatal(err)
 	}
 	return filepath.Join(dir, name)
+}
+
+func addWatchDir(watcher *watcher.FSNotify, root string, excludes []string) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			for _, ex := range excludes {
+				if strings.HasSuffix(path, ex) {
+					return filepath.SkipDir
+				}
+			}
+			if err := watcher.Add(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

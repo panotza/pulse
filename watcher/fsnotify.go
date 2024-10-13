@@ -13,20 +13,18 @@ import (
 )
 
 type FSNotify struct {
-	root         string
 	excludePaths []string
 	onlyGo       bool
 	w            *fsnotify.Watcher
 	err          error
 }
 
-func NewFSNotify(root string, excludePath []string, onlyGo bool) *FSNotify {
+func NewFSNotify(excludePath []string, onlyGo bool) *FSNotify {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatal(err)
 	}
 	return &FSNotify{
-		root:         root,
 		excludePaths: excludePath,
 		onlyGo:       onlyGo,
 		w:            watcher,

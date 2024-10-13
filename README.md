@@ -22,7 +22,7 @@ or
 ```shell
 pulse . # watch current directory and also go run current directory package
 pulse /path/to/your/package (directory or go file) # watch current directory and go run /path/to/your/package
-pulse -wd ./sub/folder . # watch only specific folder
+pulse -wd ./sub/folder1 -wd ./sub/folder2 . # watch only specific folders
 ```
 
 Options
