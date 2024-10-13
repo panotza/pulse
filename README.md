@@ -34,6 +34,7 @@ Options
    -go                          Reload only when .go files change.
    -xp                          Disable the built-in preset.
    -buildArgs value             Additional Go build arguments.
+   -pbc                         Command to run before build.
    -h                           Show help.
 ```
 

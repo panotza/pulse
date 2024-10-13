@@ -54,6 +54,7 @@ var (
 	onlyGo        = flag.Bool("go", false, "Reload only when .go file changes.")
 	disablePreset = flag.Bool("xp", false, "Disable built-in preset.")
 	workingDir    = flag.String("cwd", ".", "Working directory of the executable.")
+	prebuildCmd   = flag.String("pbc", "", "Command to run before build.")
 )
 
 func main() {
@@ -96,7 +97,7 @@ func main() {
 	defer os.Remove(outBinPath)
 	fmt.Println("Pulse bin:", outBinPath)
 
-	builder := work.NewBuilder(packagePath, outBinPath, buildArgs)
+	builder := work.NewBuilder(packagePath, outBinPath, buildArgs, *prebuildCmd)
 
 	var runArgs []string
 	if i := slices.Index(args, "--"); i >= 0 {
