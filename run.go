@@ -18,7 +18,9 @@ import (
 	"github.com/panotza/pulse/work"
 )
 
-func run(packagePath string, args []string) error {
+func run(args []string) error {
+	var err error
+
 	// Configure slog with the specified log level
 	if s := os.Getenv("LOG_LEVEL"); s != "" {
 		var lv slog.Level
@@ -33,11 +35,24 @@ func run(packagePath string, args []string) error {
 		slog.SetDefault(slog.New(handler))
 	}
 
+	packagePath := "."
+	if len(args) > 0 {
+		packagePath = args[0]
+		args = args[1:]
+	}
+
+	packagePath, err = filepath.Abs(packagePath)
+	if err != nil {
+		return fmt.Errorf("get absolute path of package %s: %w", packagePath, err)
+	}
+
+	ignorePatterns := mergeIgnorePatterns(excludes, readGitIgnore(), readPulseIgnore())
+
 	ctx, shutdown := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer shutdown()
 
 	fsWatcher, err := watcher.NewFileWatcher(
-		watcher.WithIgnorePatterns(excludes),
+		watcher.WithIgnorePatterns(ignorePatterns),
 		watcher.WithLogger(slog.Default()),
 	)
 	if err != nil {
@@ -47,7 +62,7 @@ func run(packagePath string, args []string) error {
 
 	outBinPath := genOutBinPath(packagePath)
 	defer os.Remove(outBinPath)
-	fmt.Println("Pulse bin:", outBinPath)
+	slog.DebugContext(ctx, "Generated output binary path", slog.String("path", outBinPath))
 
 	var runArgs []string
 	if i := slices.Index(args, "--"); i >= 0 {
@@ -73,11 +88,11 @@ func run(packagePath string, args []string) error {
 	}
 
 	// Create runner and builder
-	runner := work.NewRunner(*workingDir, outBinPath, runArgs)
+	runner := work.NewRunner(workingDir, outBinPath, runArgs)
 	go runner.Listen(ctx)
 
 	buildCtx, cancelBuild := context.WithCancel(ctx)
-	builder := work.NewBuilder(packagePath, outBinPath, buildArgs, *prebuildCmd)
+	builder := work.NewBuilder(packagePath, outBinPath, buildArgs, prebuildCmd)
 
 	// Main loop to handle file system events and build process
 	for {
