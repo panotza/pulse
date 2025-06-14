@@ -14,8 +14,6 @@ type Builder struct {
 	outBinPath  string
 	buildArgs   []string
 	prebuildCmd string
-
-	buildSignal chan struct{}
 }
 
 func NewBuilder(packagePath, outBinPath string, buildArgs []string, prebuildCmd string) *Builder {
@@ -24,12 +22,7 @@ func NewBuilder(packagePath, outBinPath string, buildArgs []string, prebuildCmd 
 		outBinPath:  outBinPath,
 		buildArgs:   buildArgs,
 		prebuildCmd: prebuildCmd,
-		buildSignal: make(chan struct{}),
 	}
-}
-
-func (b *Builder) BuildSignal() <-chan struct{} {
-	return b.buildSignal
 }
 
 func (b *Builder) Build(ctx context.Context) error {
@@ -75,7 +68,6 @@ func (b *Builder) build(ctx context.Context) (err error) {
 	defer func() {
 		if err == nil {
 			log.Printf("[Pulse] Successfully Build. (%s)\n", time.Since(start))
-			b.buildSignal <- struct{}{}
 		}
 	}()
 	err = cmd.Run()

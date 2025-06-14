@@ -31,7 +31,6 @@ Options
    -wd                          Watching Directory.
    -cwd                         Working directory of the executable.
    -x value                     Relative directories or files to exclude.
-   -go                          Reload only when .go files change.
    -xp                          Disable the built-in preset.
    -buildArgs value             Additional Go build arguments.
    -pbc                         Command to run before build.

@@ -42,9 +42,9 @@ func (d *debounce) cancel() {
 	d.done = true
 }
 
-// NewDebounce creates a debounced instance that delays invoking functions given until after wait milliseconds have elapsed.
+// newDebounce creates a debounced instance that delays invoking functions given until after wait milliseconds have elapsed.
 // Steal from: https://github.com/samber/lo
-func NewDebounce(duration time.Duration, f func()) (func(), func()) {
+func newDebounce(duration time.Duration, f func()) (func(), func()) {
 	d := &debounce{
 		after:    duration,
 		mu:       new(sync.Mutex),

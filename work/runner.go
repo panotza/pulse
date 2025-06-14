@@ -2,13 +2,12 @@ package work
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/exec"
 	"runtime"
 	"time"
-
-	"golang.org/x/sync/singleflight"
 )
 
 type Runner struct {
@@ -16,89 +15,89 @@ type Runner struct {
 	workingDir string
 	args       []string
 
-	refreshSig <-chan struct{}
+	refreshSignal chan struct{}
+	stopSignal    chan struct{}
 }
 
-func NewRunner(workingDir string, binPath string, refreshSig <-chan struct{}, args []string) *Runner {
+func NewRunner(workingDir string, binPath string, args []string) *Runner {
 	return &Runner{
-		binPath:    binPath,
-		workingDir: workingDir,
-		refreshSig: refreshSig,
-		args:       args,
+		binPath:       binPath,
+		workingDir:    workingDir,
+		refreshSignal: make(chan struct{}),
+		stopSignal:    make(chan struct{}),
+		args:          args,
+	}
+}
+
+func (r *Runner) Refresh() {
+	select {
+	case r.refreshSignal <- struct{}{}:
+	default:
+	}
+}
+
+func (r *Runner) Stop() {
+	select {
+	case r.stopSignal <- struct{}{}:
+	default:
 	}
 }
 
 func (r *Runner) Listen(ctx context.Context) {
-	var (
-		kill func()
-		err  error
-	)
-	defer func() {
-		if kill != nil {
-			kill()
-		}
-	}()
-
-	g := singleflight.Group{}
+	var stopProcess context.CancelFunc = func() {}
 
 	for {
 		select {
 		case <-ctx.Done():
+			stopProcess()
 			return
-		case _, ok := <-r.refreshSig:
-			if !ok {
-				continue
-			}
+		case <-r.stopSignal:
+			stopProcess()
+		case <-r.refreshSignal:
+			stopProcess()
 
-			// new signal can be received while waiting kill()
-			// so it should ignore trailing signal and only run once after killed
-			g.Do("exec", func() (any, error) {
-				if kill != nil {
-					kill() // kill can take upto 3 secs
+			// Start a new process.
+			var processCtx context.Context
+			processCtx, stopProcess = context.WithCancel(ctx)
+			go func() {
+				if err := r.startProcess(processCtx); err != nil {
+					log.Printf("[Runner] failed to start process: %v\n", err)
 				}
-				kill, err = r.exec()
-				if err != nil {
-					log.Println("start process failed:", err)
-				}
-				return nil, nil
-			})
+			}()
 		}
 	}
 }
 
-func (r *Runner) exec() (func(), error) {
-	cmd := exec.Command(r.binPath, r.args...)
+func (r *Runner) startProcess(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, r.binPath, r.args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = r.workingDir
+	cmd.WaitDelay = 3 * time.Second
+	cmd.Cancel = func() error {
+		if runtime.GOOS == "windows" {
+			return cmd.Process.Kill()
+		}
+		return cmd.Process.Signal(os.Interrupt)
+	}
+
 	err := cmd.Start()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	kill := func() {
-		done := make(chan struct{})
-		go func() {
-			cmd.Wait()
-			close(done)
-		}()
-
-		// trying a "soft" kill first
-		if runtime.GOOS == "windows" {
-			cmd.Process.Kill()
-		} else {
-			cmd.Process.Signal(os.Interrupt)
-		}
-
-		// wait for our process to die before we return or hard kill after 3 sec
-		select {
-		case <-time.After(3 * time.Second):
-			if err := cmd.Process.Kill(); err != nil {
-				log.Println("[Pulse] failed to kill: ", err)
-			}
-		case <-done:
+	err = cmd.Wait()
+	if err != nil {
+		var xe *exec.ExitError
+		switch {
+		case errors.As(err, &xe):
+			log.Printf("[Runner] process exited with code: %d\n", xe.ExitCode())
+		case errors.Is(err, context.Canceled):
+			return nil
+		default:
+			return err
 		}
 	}
-	return kill, nil
+	return nil
 }
