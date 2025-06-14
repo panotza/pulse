@@ -37,13 +37,14 @@ jobs:
     - name: Run vet
       run: go vet ./...
     
+      # PowerShell bug. avoid "." in filename https://github.com/PowerShell/PowerShell/issues/6291
     - name: Run tests
-      run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      run: go test -race -coverprofile=coverage_out -covermode=atomic ./...
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
       with:
-        file: ./coverage.out
+        file: ./coverage_out
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
