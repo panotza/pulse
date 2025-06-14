@@ -33,18 +33,5 @@ jobs:
     
     - run: go mod download
     - run: go mod verify
-    
-    - name: Run vet
-      run: go vet ./...
-    
-      # PowerShell bug. avoid "." in filename https://github.com/PowerShell/PowerShell/issues/6291
-    - name: Run tests
-      run: go test -race -coverprofile=coverage_out -covermode=atomic ./...
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage_out
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
+    - run: go vet ./...
+    - run: go test -race ./...
