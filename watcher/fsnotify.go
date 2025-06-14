@@ -82,27 +82,33 @@ func (fsw *FSNotify) Listen(ctx context.Context) <-chan struct{} {
 	return signal
 }
 
-// handleEvent processes fsnotify events and determines whether to trigger file system notifications.
-// It automatically adds newly created files/directories to the watcher and returns true for
-// events that should trigger notifications (Create, Remove, Write, Rename operations).
+// handleEvent processes a single fsnotify event and determines if it should trigger a change notification.
+// It first checks if the event path should be ignored using the ignore matcher. If ignored, the event
+// is logged and discarded. For CREATE events, the new path is automatically added to the watcher.
+// Returns:
+//   - bool: true if the event represents a significant change, false otherwise
+//   - error: any error encountered during event processing
 func (fsw *FSNotify) handleEvent(ctx context.Context, event fsnotify.Event) (bool, error) {
-	if event.Has(fsnotify.Create) {
-		ignored, err := fsw.ignoreMatcher.Matches(event.Name)
-		if err != nil {
-			return false, err
-		}
-		if ignored {
-			fsw.logger.DebugContext(ctx, "fsnotify create event ignored", slog.String("path", event.Name))
-		} else {
-			fsw.logger.DebugContext(ctx, "fsnotify create event", slog.String("path", event.Name))
+	ignored, err := fsw.ignoreMatcher.Matches(event.Name)
+	if err != nil {
+		return false, err
+	}
+	if ignored {
+		fsw.logger.DebugContext(ctx, "ignoring event for path", slog.String("path", event.Name), slog.String("event", event.Op.String()))
+		return false, nil
+	}
 
-			err = fsw.Watcher.Add(event.Name)
-			if err != nil {
-				return false, fmt.Errorf("failed to add path %s to fsnotify watcher: %w", event.Name, err)
-			}
+	if event.Has(fsnotify.Create) {
+		fsw.logger.DebugContext(ctx, "fsnotify create event", slog.String("path", event.Name))
+
+		err = fsw.Watcher.Add(event.Name)
+		if err != nil {
+			return false, fmt.Errorf("failed to add path %s to fsnotify watcher: %w", event.Name, err)
 		}
+
 		return true, nil
 	}
+
 	if event.Has(fsnotify.Remove) || event.Has(fsnotify.Write) || event.Has(fsnotify.Rename) {
 		return true, nil
 	}
