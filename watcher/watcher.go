@@ -3,7 +3,6 @@ package watcher
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -51,7 +50,7 @@ func WithNotifier(notifier FileNotifier) FileWatcherOption {
 func NewFileWatcher(options ...FileWatcherOption) (*FileWatcher, error) {
 	fw := &FileWatcher{
 		ignorePatterns: nil,
-		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logger:         slog.New(slog.DiscardHandler),
 		notifier:       nil,
 	}
 
