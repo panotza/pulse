@@ -46,7 +46,7 @@ func run(args []string) error {
 		return fmt.Errorf("get absolute path of package %s: %w", packagePath, err)
 	}
 
-	ignorePatterns := mergeIgnorePatterns(excludes, readGitIgnore(), readPulseIgnore())
+	ignorePatterns := mergeIgnorePatterns(readGitIgnore(), readPulseIgnore(), excludes)
 
 	ctx, shutdown := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer shutdown()
@@ -91,10 +91,10 @@ func run(args []string) error {
 	runner := work.NewRunner(workingDir, outBinPath, runArgs)
 	go runner.Listen(ctx)
 
-	buildCtx, cancelBuild := context.WithCancel(ctx)
 	builder := work.NewBuilder(packagePath, outBinPath, buildArgs, prebuildCmd)
 
 	// Main loop to handle file system events and build process
+	buildCtx, cancelBuild := context.WithCancel(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -102,15 +102,13 @@ func run(args []string) error {
 			cancelBuild()
 			return nil
 		case _, ok := <-fsSignal:
-			if !ok {
-				// Channel closed, watcher stopped
-				runner.Stop()
-				cancelBuild()
-				return nil
-			}
-
 			runner.Stop()
 			cancelBuild()
+
+			if !ok {
+				// Channel closed, watcher stopped
+				return nil
+			}
 
 			buildCtx, cancelBuild = context.WithCancel(ctx)
 			go func() {

@@ -2,6 +2,7 @@ package work
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -51,7 +52,11 @@ func (b *Builder) prebuild(ctx context.Context) error {
 	cmd.Stderr = os.Stderr
 
 	log.Printf("[Pulse] %s\n", b.prebuildCmd)
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("prebuild command failed: %w", err)
+	}
+
+	return nil
 }
 
 func (b *Builder) build(ctx context.Context) (err error) {
@@ -70,6 +75,10 @@ func (b *Builder) build(ctx context.Context) (err error) {
 			log.Printf("[Pulse] Successfully Build. (%s)\n", time.Since(start))
 		}
 	}()
-	err = cmd.Run()
-	return err
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("build failed for package %s: %w", b.packagePath, err)
+	}
+
+	return nil
 }
