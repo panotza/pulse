@@ -97,8 +97,10 @@ func (fw *FileWatcher) AddDirectory(ctx context.Context, path string) error {
 			return err
 		}
 		if ignored {
-			fw.logger.DebugContext(ctx, "skipping ignored path", slog.String("path", walkPath))
-			return filepath.SkipDir // Skip this directory if it's ignored
+			if d.IsDir() {
+				fw.logger.DebugContext(ctx, "skipping ignored directory path", slog.String("path", walkPath))
+				return filepath.SkipDir // Skip this directory if it's ignored
+			}
 		}
 
 		// Only add directories
