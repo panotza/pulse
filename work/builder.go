@@ -3,6 +3,7 @@ package work
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -47,9 +48,17 @@ func (b *Builder) prebuild(ctx context.Context) error {
 		cmd = exec.CommandContext(ctx, "sh", "-c")
 	}
 	cmd.Args = append(cmd.Args, b.prebuildCmd)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	go io.Copy(os.Stdout, stdout)
+	go io.Copy(os.Stdout, stderr)
 
 	log.Printf("[Pulse] %s\n", b.prebuildCmd)
 	if err := cmd.Run(); err != nil {
@@ -64,9 +73,17 @@ func (b *Builder) build(ctx context.Context) (err error) {
 	args = append(args, b.packagePath)
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	go io.Copy(os.Stdout, stdout)
+	go io.Copy(os.Stdout, stderr)
 
 	log.Println("[Pulse] Building...")
 	start := time.Now()

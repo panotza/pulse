@@ -3,6 +3,7 @@ package work
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -70,9 +71,6 @@ func (r *Runner) Listen(ctx context.Context) {
 
 func (r *Runner) startProcess(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, r.binPath, r.args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Dir = r.workingDir
 	cmd.WaitDelay = 3 * time.Second
 	cmd.Cancel = func() error {
@@ -82,7 +80,19 @@ func (r *Runner) startProcess(ctx context.Context) error {
 		return cmd.Process.Signal(os.Interrupt)
 	}
 
-	err := cmd.Start()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	go io.Copy(os.Stdout, stdout)
+	go io.Copy(os.Stdout, stderr)
+
+	err = cmd.Start()
 	if err != nil {
 		return err
 	}
